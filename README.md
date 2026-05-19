@@ -127,11 +127,11 @@ Input (Text / Image)
 ---
 
 ## 🖥️ Streamlit UI
+<img width="1565" height="813" alt="image" src="https://github.com/user-attachments/assets/ca1b1d2e-b126-4bad-bffa-0574f33f88fc" />
 
-> Add screenshots here after running the app
 
 The UI supports:
-- Paste any news article in **English or Hindi**
+- Paste any news article in **many languages**
 - Toggle between **Full Verification** (web search + LLM) and **Style Only** (fast mode)
 - Displays: Verdict card, Confidence %, Identified Claims, Evidence sources
 
