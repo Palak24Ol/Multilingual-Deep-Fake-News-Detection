@@ -1,6 +1,6 @@
 # 🔍 Multilingual Deep Fake News Detection
 
-A **multi-modal fake news detection system** that analyzes both **text articles** and **images** to classify news as Real or Fake. Supports **English and Hindi** with a 3-layer verification pipeline powered by XLM-RoBERTa and Llama 3.3.
+A **multi-modal fake news detection system** that analyzes both **text articles** and **images** to classify news as Real or Fake. Supports **100+ languages** (fine-tuned on English, Hindi, Bengali, Gujarati, Marathi & Telugu) with a 3-layer verification pipeline powered by XLM-RoBERTa and Llama 3.3.
 
 ---
 
@@ -49,17 +49,17 @@ Input (Text / Image)
 
 ```
 ├── DeepFakeNewsDetection_Text/
-│   ├── datasetfile.ipynb           # Dataset collection & merging
-│   ├── model.ipynb                 # XLM-RoBERTa model training
-│   ├── predict-model.ipynb         # Model evaluation & prediction
-│   ├── internetnewsdataset.ipynb   # Internet news dataset integration
-│   └── finetunedmodel.ipynb        # Fine-tuning with updated dataset
+│   ├── datasetfile.ipynb           # File A — Dataset collection & merging (10+ sources)
+│   ├── model.ipynb                 # File B — XLM-RoBERTa model training
+│   ├── predict-model.ipynb         # File C — Model evaluation & prediction
+│   ├── internetnewsdataset.ipynb   # File D — Internet news dataset integration
+│   └── finetunedmodel.ipynb        # File E — Fine-tuning with updated dataset
 │
 ├── DeepFakeNewsDetection_Image/
 │   └── deep-fake-image-final.ipynb # EfficientNetB0 deepfake image detection
 │
 ├── Dataset/                        # Sample dataset files
-├── app.py                          # Streamlit web application
+├── app.py                          # Streamlit web application (main)
 ├── requirements.txt                # Python dependencies
 └── README.md
 ```
@@ -73,8 +73,8 @@ Input (Text / Image)
 |---|---|
 | Base Model | `XLM-RoBERTa-base` |
 | Architecture | Hierarchical Transformer (chunk-level + doc-level) |
-| Languages | English, Hindi |
-| Fine-tuned on | Multilingual fake news datasets (see below) |
+| Languages | English, Hindi, Bengali, Gujarati, Marathi, Telugu |
+| Fine-tuned on | 10+ multilingual fake news datasets |
 
 ### Image Detection
 | Component | Detail |
@@ -82,38 +82,76 @@ Input (Text / Image)
 | Model | `EfficientNetB0` (transfer learning) |
 | Task | Deepfake face classification |
 | Input Size | 128×128 |
-| Datasets | 140K Faces, Celeb-DF v2, CIPLAB, HardFakeVsReal |
+| Training | Two-phase (frozen base → full fine-tune) |
 
 ---
 
 ## 📊 Datasets Used
 
-### Text Datasets (Kaggle)
-| Dataset | Link |
-|---|---|
-| Dataset 1 | <!-- Add your Kaggle dataset link here --> |
-| Dataset 2 | <!-- Add your Kaggle dataset link here --> |
-| Internet News Dataset | <!-- Add your Kaggle dataset link here --> |
+### 📝 File — Text Dataset Collection (`datasetfile.ipynb`)
 
-### Image Datasets (Kaggle)
+| # | Dataset | Language | Link |
+|---|---|---|---|
+| 1 | WELFake — Fake News Classification | English | [Kaggle](https://www.kaggle.com/datasets/saurabhshahane/fake-news-classification) |
+| 2 | Fake News Classification | English | [Kaggle](https://www.kaggle.com/datasets/aadyasingh55/fake-news-classification) |
+| 3 | English-Hindi Fake News | English + Hindi | [Kaggle](https://www.kaggle.com/datasets/maanavghai/english-hindi-fake-news) |
+| 4 | Hindi Fake News Dataset | Hindi | [Kaggle](https://www.kaggle.com/datasets/sudhanshukumar344/hindi-fake-news-dataset) |
+| 5 | Fake & Real News | English | [Kaggle](https://www.kaggle.com/datasets/imbikramsaha/fake-real-news) |
+| 6 | Gujarati / Marathi / Telugu Fake News | Gujarati, Marathi, Telugu | [Zenodo](https://zenodo.org/records/11408513) |
+| 7 | Bangla Fake News | Bengali | [Kaggle](https://www.kaggle.com/datasets/hrithikmajumdar/bangla-fake-news) |
+| 8 | ISOT Fake and Real News | English | [Kaggle](https://www.kaggle.com/datasets/clmentbisaillon/fake-and-real-news-dataset) |
+
+### 🌐 File  — Internet News Dataset (`internetnewsdataset.ipynb`)
+
+| # | Dataset | Source | Link |
+|---|---|---|---|
+| Archive 10 | Indian News Articles | Indian News | [Kaggle](https://www.kaggle.com/datasets/jatinkalra17/indian-news-articles-dataset) |
+| Archive 11 | BBC News Articles | BBC | [Kaggle](https://www.kaggle.com/datasets/bhavikjikadara/bbc-news-articles) |
+| Archive 12 | Inshorts English Dataset | Inshorts | [Kaggle](https://www.kaggle.com/datasets/shivamtaneja2304/inshorts-dataset-english) |
+| Archive 13 | News Articles Classification | Mixed | [Kaggle](https://www.kaggle.com/datasets/banuprakashv/news-articles-classification-dataset-for-nlp-and-ml) |
+| Archive 14 | Times of India Headlines | Times of India | [Kaggle](https://www.kaggle.com/datasets/thedevastator/times-of-india-headlines-analysis) |
+| Archive 15 | India Headlines 2001–2023 | India News | [Kaggle](https://www.kaggle.com/datasets/therohk/india-headlines-news-dataset) |
+| Archive 16 | News Category Dataset | HuffPost | [Kaggle](https://www.kaggle.com/datasets/rmisra/news-category-dataset) |
+| LIAR | LIAR Fake News Dataset | Political | [Kaggle](https://www.kaggle.com/datasets/csmalarkodi/liar-fake-news-dataset) |
+
+### 🖼️ Image Datasets (File  — Image)
+
 | Dataset | Link |
 |---|---|
-| 140K Real and Fake Faces | https://www.kaggle.com/datasets/xhlulu/140k-real-and-fake-faces |
-| Deepfake and Real Images | https://www.kaggle.com/datasets/manjilkarki/deepfake-and-real-images |
-| Celeb-DF v2 | https://www.kaggle.com/datasets/reubensuju/celeb-df-v2 |
-| Real and Fake Face Detection (CIPLAB) | https://www.kaggle.com/datasets/ciplab/real-and-fake-face-detection |
-| HardFakeVsRealFaces | https://www.kaggle.com/datasets/hamzaboulahia/hardfakevsrealfaces |
+| 140K Real and Fake Faces | [Kaggle](https://www.kaggle.com/datasets/xhlulu/140k-real-and-fake-faces) |
+| Deepfake and Real Images | [Kaggle](https://www.kaggle.com/datasets/manjilkarki/deepfake-and-real-images) |
+| Celeb-DF v2 | [Kaggle](https://www.kaggle.com/datasets/reubensuju/celeb-df-v2) |
+| Real and Fake Face Detection (CIPLAB) | [Kaggle](https://www.kaggle.com/datasets/ciplab/real-and-fake-face-detection) |
+| HardFakeVsRealFaces | [Kaggle](https://www.kaggle.com/datasets/hamzaboulahia/hardfakevsrealfaces) |
 
 ---
 
 ## 🖥️ Streamlit UI
 
-> Screenshots coming soon <!-- Replace with actual screenshots -->
+> Add screenshots here after running the app
 
 The UI supports:
-- Paste any news article (English or Hindi)
+- Paste any news article in **English or Hindi**
 - Toggle between **Full Verification** (web search + LLM) and **Style Only** (fast mode)
 - Displays: Verdict card, Confidence %, Identified Claims, Evidence sources
+
+---
+
+## ⬇️ Model Download
+
+The fine-tuned model is too large for GitHub. Download and place in the project root:
+
+| File | Download |
+|---|---|
+| `improved_model_v2.pt` | [Google Drive](https://drive.google.com/file/d/1UxSxjeUEse1CUTFOj1nUoQL90b3bTXZI/view?usp=sharing) |
+| `xlm-roberta-base/` folder | Auto-download via HuggingFace (see below) |
+
+```python
+# Auto-download xlm-roberta-base
+from transformers import AutoTokenizer, AutoModel
+tokenizer = AutoTokenizer.from_pretrained("xlm-roberta-base")
+model = AutoModel.from_pretrained("xlm-roberta-base")
+```
 
 ---
 
@@ -121,12 +159,14 @@ The UI supports:
 
 ### 1. Clone the repository
 ```bash
-git clone https://github.com/YOUR_USERNAME/Multilingual-Deep-Fake-News-Detection.git
+git clone https://github.com/Palak24Ol/Multilingual-Deep-Fake-News-Detection.git
 cd Multilingual-Deep-Fake-News-Detection
 ```
 
-### 2. Install dependencies
+### 2. Create virtual environment & install dependencies
 ```bash
+python -m venv venv
+venv\Scripts\activate        # Windows
 pip install -r requirements.txt
 ```
 
@@ -138,10 +178,8 @@ GROQ_API_KEY=your_groq_api_key
 GOOGLE_FC_API_KEY=your_google_factcheck_key   # optional
 ```
 
-### 4. Download model files
-Download the fine-tuned models and place them in the root:
-- `improved_model_v2.pt` → [Download Link](#) <!-- Add Google Drive link -->
-- `xlm-roberta-base/` folder → [Download Link](#) <!-- Add Google Drive link -->
+### 4. Download the fine-tuned model
+Download `improved_model_v2.pt` from [Google Drive](https://drive.google.com/file/d/1UxSxjeUEse1CUTFOj1nUoQL90b3bTXZI/view?usp=sharing) and place it in the project root. Then update `MODEL_PATH` in `app.py` if needed.
 
 ### 5. Run the app
 ```bash
@@ -152,38 +190,40 @@ streamlit run app.py
 
 ## 🔑 API Keys Required
 
-| Key | Where to get |
-|---|---|
-| `GROQ_API_KEY` | https://console.groq.com |
-| `SERPER_API_KEY` | https://serper.dev |
-| `GOOGLE_FC_API_KEY` | https://developers.google.com/fact-check/tools/api (optional) |
+| Key | Free? | Where to get |
+|---|---|---|
+| `GROQ_API_KEY` | ✅ Free | [console.groq.com](https://console.groq.com) |
+| `SERPER_API_KEY` | ✅ Free tier | [serper.dev](https://serper.dev) |
+| `GOOGLE_FC_API_KEY` | ✅ Free | [Google Fact Check API](https://developers.google.com/fact-check/tools/api) |
 
 ---
 
 ## 📄 Project Report
 
-The full project report is included in this repository → [View Report](./Project_Report.pdf)
+The full project report is included → [View Report](./Project_Report.pdf)
 
 ---
 
 ## 🛠️ Tech Stack
 
-- **ML/DL**: PyTorch, HuggingFace Transformers, TensorFlow, Keras
-- **Models**: XLM-RoBERTa, EfficientNetB0, Llama 3.3 (via Groq)
-- **APIs**: Groq, Serper, Google Fact Check
-- **Frontend**: Streamlit
-- **Languages**: Python
+| Category | Tools |
+|---|---|
+| ML / NLP | PyTorch, HuggingFace Transformers, XLM-RoBERTa |
+| Image DL | TensorFlow, Keras, EfficientNetB0 |
+| LLM | Llama 3.3 70B via Groq API |
+| APIs | Serper (web search), Google Fact Check |
+| Frontend | Streamlit |
+| Language | Python 3.10+ |
 
 ---
 
-## 👨‍💻 Author
+## 👩‍💻 Author
 
-**Your Name**
-- GitHub: [@your_username](https://github.com/your_username)
-- LinkedIn: [your_linkedin](#)
+**Palak Jaiswal**
+- GitHub: [@Palak24Ol](https://github.com/Palak24Ol)
 
 ---
 
 ## 📜 License
 
-This project is for academic/educational purposes only.
+This project is for academic and educational purposes only.
