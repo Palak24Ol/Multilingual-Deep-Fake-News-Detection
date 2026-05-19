@@ -2,6 +2,10 @@
 
 A **multi-modal fake news detection system** that analyzes both **text articles** and **images** to classify news as Real or Fake. Supports **100+ languages** (fine-tuned on English, Hindi, Bengali, Gujarati, Marathi & Telugu) with a 3-layer verification pipeline powered by XLM-RoBERTa and Llama 3.3.
 
+## 🚀 Live Demo
+
+[![HuggingFace Spaces](https://img.shields.io/badge/🤗%20HuggingFace-Live%20Demo-blue)](https://huggingface.co/spaces/PalakJaiswal2401/multilingual-fake-news-detection)
+
 ---
 
 ## 📌 Project Overview
@@ -88,7 +92,7 @@ Input (Text / Image)
 
 ## 📊 Datasets Used
 
-### 📝 File — Text Dataset Collection (`datasetfile.ipynb`)
+### 📝 File A — Text Dataset Collection (`datasetfile.ipynb`)
 
 | # | Dataset | Language | Link |
 |---|---|---|---|
@@ -101,7 +105,7 @@ Input (Text / Image)
 | 7 | Bangla Fake News | Bengali | [Kaggle](https://www.kaggle.com/datasets/hrithikmajumdar/bangla-fake-news) |
 | 8 | ISOT Fake and Real News | English | [Kaggle](https://www.kaggle.com/datasets/clmentbisaillon/fake-and-real-news-dataset) |
 
-### 🌐 File  — Internet News Dataset (`internetnewsdataset.ipynb`)
+### 🌐 File D — Internet News Dataset (`internetnewsdataset.ipynb`)
 
 | # | Dataset | Source | Link |
 |---|---|---|---|
@@ -114,7 +118,7 @@ Input (Text / Image)
 | Archive 16 | News Category Dataset | HuffPost | [Kaggle](https://www.kaggle.com/datasets/rmisra/news-category-dataset) |
 | LIAR | LIAR Fake News Dataset | Political | [Kaggle](https://www.kaggle.com/datasets/csmalarkodi/liar-fake-news-dataset) |
 
-### 🖼️ Image Datasets (File  — Image)
+### 🖼️ Image Datasets
 
 | Dataset | Link |
 |---|---|
@@ -128,10 +132,10 @@ Input (Text / Image)
 
 ## 🖥️ Streamlit UI
 
-> Add screenshots here after running the app
+<img width="1565" height="813" alt="image" src="https://github.com/user-attachments/assets/ca1b1d2e-b126-4bad-bffa-0574f33f88fc" />
 
 The UI supports:
-- Paste any news article in **English or Hindi**
+- Paste any news article in **many languages**
 - Toggle between **Full Verification** (web search + LLM) and **Style Only** (fast mode)
 - Displays: Verdict card, Confidence %, Identified Claims, Evidence sources
 
@@ -144,6 +148,7 @@ The fine-tuned model is too large for GitHub. Download and place in the project 
 | File | Download |
 |---|---|
 | `improved_model_v2.pt` | [Google Drive](https://drive.google.com/file/d/1UxSxjeUEse1CUTFOj1nUoQL90b3bTXZI/view?usp=sharing) |
+| `improved_model_v2.pt` | [HuggingFace Hub](https://huggingface.co/PalakJaiswal2401/multilingual-fake-news-detection) |
 | `xlm-roberta-base/` folder | Auto-download via HuggingFace (see below) |
 
 ```python
@@ -179,7 +184,7 @@ GOOGLE_FC_API_KEY=your_google_factcheck_key   # optional
 ```
 
 ### 4. Download the fine-tuned model
-Download `improved_model_v2.pt` from [Google Drive](https://drive.google.com/file/d/1UxSxjeUEse1CUTFOj1nUoQL90b3bTXZI/view?usp=sharing) and place it in the project root. Then update `MODEL_PATH` in `app.py` if needed.
+Download `improved_model_v2.pt` from [HuggingFace](https://huggingface.co/PalakJaiswal2401/multilingual-fake-news-detection) or [Google Drive](https://drive.google.com/file/d/1UxSxjeUEse1CUTFOj1nUoQL90b3bTXZI/view?usp=sharing) and place it in the project root.
 
 ### 5. Run the app
 ```bash
@@ -200,7 +205,7 @@ streamlit run app.py
 
 ## 📄 Project Report
 
-The full project report is included → [View Report](./Project_Report.pdf)
+The full project report is included → [View Report](https://drive.google.com/file/d/1DdrmTtYAblPX9T6QKfVW3zZjJgNTHlMj/view?usp=sharing)
 
 ---
 
