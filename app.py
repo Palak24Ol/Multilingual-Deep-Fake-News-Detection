@@ -2,182 +2,332 @@ import streamlit as st
 import torch
 import torch.nn as nn
 from transformers import AutoTokenizer, AutoModel
+from huggingface_hub import hf_hub_download
 import requests
 import json
 import os
 import time
-from dotenv import load_dotenv
 
 # ─────────────────────────────────────────────
-#  LOAD ENVIRONMENT VARIABLES FROM .env FILE
+#  LOAD API KEYS — st.secrets (deployment) with
+#  fallback to .env file (local development)
 # ─────────────────────────────────────────────
-load_dotenv()
+def get_secret(key: str) -> str:
+    """Try st.secrets first (Streamlit Cloud), then env vars (local .env)."""
+    try:
+        return st.secrets.get(key, "")
+    except Exception:
+        pass
+    # local fallback — parse .env manually
+    if not hasattr(get_secret, "_loaded"):
+        if os.path.exists(".env"):
+            with open(".env", "r") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith("#") or "=" not in line:
+                        continue
+                    k, _, v = line.partition("=")
+                    os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
+        get_secret._loaded = True
+    return os.getenv(key, "")
 
-SERPER_API_KEY  = os.getenv("SERPER_API_KEY", "")
-GROQ_API_KEY    = os.getenv("GROQ_API_KEY", "")
-GOOGLE_FC_KEY   = os.getenv("GOOGLE_FC_API_KEY", "")
+SERPER_API_KEY = get_secret("SERPER_API_KEY")
+GROQ_API_KEY   = get_secret("GROQ_API_KEY")
+GOOGLE_FC_KEY  = get_secret("GOOGLE_FC_API_KEY")
 
 # ─────────────────────────────────────────────
 #  CONFIG
 # ─────────────────────────────────────────────
-MODEL_PATH      = "C:/FakeNewsApp/improved_model_v2.pt"
-BASE_MODEL_PATH = "./xlm-roberta-base"
+HF_REPO_ID      = "PalakJaiswal2401/multilingual-fake-news-detection"
+HF_FILENAME     = "improved_model_v2.pt"
+BASE_MODEL_NAME = "xlm-roberta-base"   # pulled directly from HuggingFace
 MAX_LENGTH      = 256
 STRIDE          = 128
 MAX_CHUNKS      = 5
 DEVICE          = torch.device("cpu")
 
-GROQ_URL      = "https://api.groq.com/openai/v1/chat/completions"
-GROQ_MODEL    = "llama-3.3-70b-versatile"
-SERPER_URL    = "https://google.serper.dev/search"
-GFC_URL       = "https://factchecktools.googleapis.com/v1alpha1/claims:search"
+GROQ_URL   = "https://api.groq.com/openai/v1/chat/completions"
+GROQ_MODEL = "llama-3.3-70b-versatile"
+SERPER_URL = "https://google.serper.dev/search"
+GFC_URL    = "https://factchecktools.googleapis.com/v1alpha1/claims:search"
 
 
 # ─────────────────────────────────────────────
-#  CUSTOM CSS — clean light mode
+#  CUSTOM CSS
 # ─────────────────────────────────────────────
 def inject_css():
     st.markdown("""
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500&family=Instrument+Sans:wght@400;500;600&display=swap');
 
     html, body, [class*="css"] {
-        font-family: 'DM Sans', sans-serif !important;
-        background-color: #ffffff !important;
-        color: #111111 !important;
+        font-family: 'Instrument Sans', sans-serif;
+        background-color: #080c14 !important;
+        color: #c8d0e0 !important;
     }
-    .stApp { background-color: #f5f5f3 !important; }
-
+    .stApp { background-color: #080c14 !important; }
     #MainMenu, footer, header { visibility: hidden; }
-    .block-container {
-        padding: 3rem 2rem 4rem 2rem !important;
-        max-width: 720px !important;
-        margin: 0 auto !important;
-    }
+    .block-container { padding: 2rem 3rem 4rem 3rem !important; max-width: 1400px !important; }
 
-    /* ── App title ── */
-    .app-title {
-        font-size: 1.5rem;
-        font-weight: 600;
-        color: #111111;
-        margin-bottom: 0.2rem;
-        letter-spacing: -0.02em;
-    }
-    .app-subtitle {
-        font-size: 0.82rem;
-        color: #888888;
-        margin-bottom: 2rem;
-    }
-
-    /* ── Section label ── */
-    .section-label {
-        font-size: 0.7rem;
-        font-weight: 600;
-        letter-spacing: 0.1em;
-        text-transform: uppercase;
-        color: #aaaaaa;
-        margin-bottom: 0.6rem;
-    }
-
-    /* ── Textarea ── */
-    .stTextArea textarea {
-        background: #ffffff !important;
-        border: 1px solid #e0e0e0 !important;
+    /* Tabs */
+    .stTabs [data-baseweb="tab-list"] {
+        background: #0d1525 !important;
         border-radius: 10px !important;
-        color: #111111 !important;
-        font-family: 'DM Sans', sans-serif !important;
-        font-size: 0.92rem !important;
-        padding: 0.9rem 1rem !important;
-        box-shadow: none !important;
-        transition: border-color 0.15s;
+        padding: 4px !important;
+        border: 1px solid #1a2744 !important;
+        gap: 4px !important;
+    }
+    .stTabs [data-baseweb="tab"] {
+        background: transparent !important;
+        border-radius: 8px !important;
+        color: #4a6080 !important;
+        font-family: 'Syne', sans-serif !important;
+        font-weight: 600 !important;
+        font-size: 0.85rem !important;
+        padding: 0.5rem 1.2rem !important;
+    }
+    .stTabs [aria-selected="true"] {
+        background: #1a2744 !important;
+        color: #00c8b4 !important;
+    }
+    .stTabs [data-baseweb="tab-panel"] { padding-top: 1.5rem !important; }
+
+    /* Hero */
+    .hero {
+        background: linear-gradient(135deg, #0d1525 0%, #0a1020 50%, #0d1a2e 100%);
+        border: 1px solid #1a2744;
+        border-radius: 16px;
+        padding: 2.5rem 3rem;
+        margin-bottom: 2rem;
+        position: relative;
+        overflow: hidden;
+    }
+    .hero::before {
+        content: '';
+        position: absolute; top: -60px; right: -60px;
+        width: 280px; height: 280px;
+        background: radial-gradient(circle, rgba(0,200,180,0.07) 0%, transparent 70%);
+        border-radius: 50%;
+    }
+    .hero-title {
+        font-family: 'Syne', sans-serif;
+        font-size: 2.4rem; font-weight: 800;
+        letter-spacing: -0.03em; color: #f0f4ff;
+        margin: 0 0 0.4rem 0; line-height: 1.1;
+    }
+    .hero-title span { color: #00c8b4; }
+    .hero-subtitle {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.75rem; color: #4a6080;
+        letter-spacing: 0.12em; text-transform: uppercase;
+    }
+    .hero-badges { display: flex; gap: 0.6rem; margin-top: 1.2rem; flex-wrap: wrap; }
+    .badge {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.65rem; padding: 0.25rem 0.7rem;
+        border-radius: 20px; letter-spacing: 0.08em;
+        text-transform: uppercase; font-weight: 500;
+    }
+    .badge-teal  { background: rgba(0,200,180,0.1);  color: #00c8b4; border: 1px solid rgba(0,200,180,0.2);  }
+    .badge-blue  { background: rgba(99,102,241,0.1); color: #818cf8; border: 1px solid rgba(99,102,241,0.2); }
+    .badge-amber { background: rgba(251,191,36,0.1); color: #fbbf24; border: 1px solid rgba(251,191,36,0.2); }
+    .badge-red   { background: rgba(239,68,68,0.1);  color: #ef4444; border: 1px solid rgba(239,68,68,0.2);  }
+
+    /* Cards */
+    .card {
+        background: #0d1525; border: 1px solid #1a2744;
+        border-radius: 12px; padding: 1.5rem; margin-bottom: 1rem;
+    }
+
+    /* Result comparison boxes */
+    .result-box {
+        border-radius: 12px; padding: 1.4rem 1.6rem; margin-bottom: 1rem;
+    }
+    .result-box-real {
+        background: linear-gradient(135deg, rgba(0,200,180,0.08), rgba(0,168,150,0.04));
+        border: 1px solid rgba(0,200,180,0.25);
+        border-left: 4px solid #00c8b4;
+    }
+    .result-box-fake {
+        background: linear-gradient(135deg, rgba(239,68,68,0.08), rgba(220,38,38,0.04));
+        border: 1px solid rgba(239,68,68,0.25);
+        border-left: 4px solid #ef4444;
+    }
+    .result-label {
+        font-family: 'Syne', sans-serif; font-size: 1.7rem;
+        font-weight: 800; letter-spacing: -0.02em; margin: 0 0 0.3rem 0;
+    }
+    .result-real { color: #00c8b4; }
+    .result-fake { color: #ef4444; }
+    .result-conf {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.7rem; color: #4a6080; letter-spacing: 0.1em;
+        text-transform: uppercase; margin-bottom: 0.6rem;
+    }
+    .result-reason { font-size: 0.87rem; color: #8090b0; line-height: 1.6; font-style: italic; }
+
+    /* Result header tags */
+    .result-tag {
+        font-family: 'JetBrains Mono', monospace; font-size: 0.62rem;
+        padding: 0.2rem 0.6rem; border-radius: 4px;
+        text-transform: uppercase; letter-spacing: 0.1em;
+        display: inline-block; margin-bottom: 0.8rem;
+    }
+    .tag-style { background: rgba(251,191,36,0.1); color: #fbbf24; border: 1px solid rgba(251,191,36,0.2); }
+    .tag-llm   { background: rgba(99,102,241,0.1); color: #818cf8; border: 1px solid rgba(99,102,241,0.2); }
+    .tag-final { background: rgba(0,200,180,0.1);  color: #00c8b4; border: 1px solid rgba(0,200,180,0.2); }
+
+    /* Claims */
+    .claims-wrapper { margin: 0.8rem 0 1rem 0; }
+    .claim-item {
+        display: flex; align-items: flex-start; gap: 0.7rem;
+        padding: 0.7rem 1rem; margin-bottom: 0.5rem;
+        background: rgba(99,102,241,0.05);
+        border: 1px solid rgba(99,102,241,0.15);
+        border-radius: 8px;
+    }
+    .claim-num {
+        font-family: 'JetBrains Mono', monospace; font-size: 0.65rem;
+        color: #818cf8; min-width: 18px; padding-top: 1px;
+    }
+    .claim-text { font-size: 0.87rem; color: #c8d0e0; line-height: 1.5; }
+
+    /* Input */
+    .stTextArea textarea {
+        background: #0d1525 !important; border: 1px solid #1a2744 !important;
+        border-radius: 10px !important; color: #c8d0e0 !important;
+        font-family: 'Instrument Sans', sans-serif !important;
+        font-size: 0.95rem !important; padding: 1rem !important;
+        transition: border-color 0.2s;
     }
     .stTextArea textarea:focus {
-        border-color: #aaaaaa !important;
-        box-shadow: none !important;
+        border-color: #00c8b4 !important;
+        box-shadow: 0 0 0 2px rgba(0,200,180,0.1) !important;
     }
-    .stTextArea textarea::placeholder { color: #bbbbbb !important; }
-    .stTextArea label { display: none !important; }
+    .stTextArea label { color: #4a6080 !important; font-size: 0.75rem !important; }
 
-    /* ── Button ── */
-    .stButton > button {
-        background: #111111 !important;
-        color: #ffffff !important;
-        border: none !important;
-        border-radius: 8px !important;
-        font-family: 'DM Sans', sans-serif !important;
-        font-weight: 500 !important;
-        font-size: 0.9rem !important;
-        padding: 0.65rem 1.5rem !important;
-        height: 2.8rem !important;
-        transition: opacity 0.15s !important;
-        box-shadow: none !important;
-        width: 100% !important;
+    /* Primary button */
+    .stButton > button[kind="primary"] {
+        background: linear-gradient(135deg, #00c8b4 0%, #00a896 100%) !important;
+        color: #080c14 !important; border: none !important;
+        border-radius: 10px !important; font-family: 'Syne', sans-serif !important;
+        font-weight: 700 !important; font-size: 0.95rem !important;
+        letter-spacing: 0.04em !important; height: 3rem !important;
+        transition: all 0.2s !important;
+        box-shadow: 0 4px 20px rgba(0,200,180,0.2) !important;
     }
-    .stButton > button:hover { opacity: 0.85 !important; }
-    .stButton > button:active { opacity: 0.7 !important; }
-
-    /* ── Verdict cards ── */
-    .verdict-real {
-        background: #f0faf4;
-        border: 1px solid #b6e8c8;
-        border-radius: 12px;
-        padding: 1.4rem 1.6rem;
-        margin-bottom: 1.5rem;
-    }
-    .verdict-fake {
-        background: #fff4f4;
-        border: 1px solid #f5c6c6;
-        border-radius: 12px;
-        padding: 1.4rem 1.6rem;
-        margin-bottom: 1.5rem;
-    }
-    .verdict-tag {
-        font-size: 1.4rem;
-        font-weight: 600;
-        letter-spacing: -0.02em;
-        margin-bottom: 0.3rem;
-    }
-    .verdict-real .verdict-tag  { color: #1a7a3f; }
-    .verdict-fake .verdict-tag  { color: #c0392b; }
-    .verdict-conf {
-        font-size: 0.82rem;
-        font-weight: 500;
-    }
-    .verdict-real .verdict-conf { color: #3aaa6a; }
-    .verdict-fake .verdict-conf { color: #e05050; }
-
-    /* ── Claim pills ── */
-    .claim-pill {
-        display: inline-block;
-        background: #f0f0ee;
-        border: 1px solid #e0e0de;
-        color: #555555;
-        font-size: 0.8rem;
-        padding: 0.3rem 0.75rem;
-        border-radius: 20px;
-        margin: 0.25rem 0.25rem 0.25rem 0;
-        line-height: 1.5;
+    .stButton > button[kind="primary"]:hover {
+        transform: translateY(-1px) !important;
+        box-shadow: 0 6px 28px rgba(0,200,180,0.35) !important;
     }
 
-    /* ── Spinner ── */
-    .stSpinner > div { border-top-color: #111111 !important; }
+    /* Metrics */
+    [data-testid="stMetric"] {
+        background: #0a1020; border: 1px solid #1a2744;
+        border-radius: 10px; padding: 0.8rem 1rem !important;
+    }
+    [data-testid="stMetricLabel"]  { color: #4a6080 !important; font-size: 0.7rem !important; letter-spacing: 0.1em; text-transform: uppercase; }
+    [data-testid="stMetricValue"]  { color: #f0f4ff !important; font-family: 'Syne', sans-serif !important; font-size: 1.5rem !important; font-weight: 700 !important; }
 
-    /* ── Divider ── */
-    hr { border-color: #e8e8e8 !important; margin: 1.5rem 0 !important; }
+    /* Progress */
+    .stProgress > div > div > div > div { background: linear-gradient(90deg, #00c8b4, #00a896) !important; border-radius: 4px !important; }
+    .stProgress > div > div            { background: #1a2744 !important; border-radius: 4px !important; }
 
-    /* ── Alerts ── */
-    .stAlert {
-        border-radius: 8px !important;
-        border: 1px solid #e0e0e0 !important;
-        font-size: 0.85rem !important;
-        background: #fafafa !important;
+    /* Expanders */
+    .streamlit-expanderHeader {
+        background: #0d1525 !important; border: 1px solid #1a2744 !important;
+        border-radius: 8px !important; color: #8090b0 !important;
+        font-family: 'JetBrains Mono', monospace !important; font-size: 0.78rem !important;
+    }
+    .streamlit-expanderContent {
+        background: #0a1020 !important; border: 1px solid #1a2744 !important;
+        border-top: none !important; border-radius: 0 0 8px 8px !important;
     }
 
-    /* ── Toggle ── */
-    .stCheckbox label, .stToggle label {
-        font-size: 0.85rem !important;
-        color: #666666 !important;
+    /* Alerts */
+    .stAlert { border-radius: 10px !important; border: none !important; font-size: 0.85rem !important; }
+    hr { border-color: #1a2744 !important; margin: 1.5rem 0 !important; }
+
+    /* Section headers */
+    .section-header {
+        font-family: 'Syne', sans-serif; font-size: 0.65rem; font-weight: 700;
+        letter-spacing: 0.2em; text-transform: uppercase; color: #4a6080;
+        margin-bottom: 1rem; display: flex; align-items: center; gap: 0.6rem;
     }
+    .section-header::after { content: ''; flex: 1; height: 1px; background: #1a2744; }
+
+    /* Evidence cards */
+    .ev-card {
+        background: #0a1020; border: 1px solid #1a2744;
+        border-radius: 8px; padding: 1rem 1.2rem; margin-bottom: 0.7rem;
+    }
+    .ev-title   { font-weight: 600; color: #c8d0e0; font-size: 0.88rem; margin-bottom: 0.3rem; }
+    .ev-snippet { color: #6080a0; font-size: 0.82rem; line-height: 1.6; margin-bottom: 0.5rem; }
+    .ev-source  { font-family: 'JetBrains Mono', monospace; font-size: 0.7rem; color: #00c8b4; }
+
+    /* Key status bar */
+    .key-status {
+        display: flex; gap: 1.5rem; padding: 0.8rem 1.2rem;
+        background: #0a1020; border: 1px solid #1a2744;
+        border-radius: 8px; margin-bottom: 1.5rem;
+        font-family: 'JetBrains Mono', monospace; font-size: 0.72rem;
+    }
+    .key-ok   { color: #00c8b4; }
+    .key-fail { color: #ef4444; }
+    .key-opt  { color: #4a6080; }
+
+    /* Pipeline layer rows */
+    .layer-row {
+        display: flex; align-items: center; gap: 0.8rem;
+        padding: 0.6rem 0; border-bottom: 1px solid #1a2744;
+        font-size: 0.85rem; color: #8090b0;
+    }
+    .layer-row:last-child { border-bottom: none; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .dot-teal   { background: #00c8b4; box-shadow: 0 0 6px rgba(0,200,180,0.5); }
+    .dot-indigo { background: #818cf8; box-shadow: 0 0 6px rgba(129,140,248,0.5); }
+    .dot-amber  { background: #fbbf24; box-shadow: 0 0 6px rgba(251,191,36,0.5); }
+    .layer-name { font-family: 'Syne', sans-serif; font-weight: 600; color: #c8d0e0; min-width: 140px; font-size: 0.82rem; }
+
+    /* Coming soon */
+    .coming-soon {
+        background: linear-gradient(135deg, #0d1525, #0a1020);
+        border: 1px dashed #1a2744; border-radius: 16px;
+        padding: 4rem 2rem; text-align: center;
+    }
+    .coming-soon-icon { font-size: 4rem; margin-bottom: 1rem; }
+    .coming-soon-title {
+        font-family: 'Syne', sans-serif; font-size: 1.8rem;
+        font-weight: 800; color: #f0f4ff; margin-bottom: 0.5rem;
+    }
+    .coming-soon-sub { color: #4a6080; font-size: 0.9rem; line-height: 1.6; max-width: 400px; margin: 0 auto; }
+    .coming-soon-badge {
+        display: inline-block; margin-top: 1.5rem;
+        font-family: 'JetBrains Mono', monospace; font-size: 0.7rem;
+        padding: 0.4rem 1rem; border-radius: 20px;
+        background: rgba(251,191,36,0.1); color: #fbbf24;
+        border: 1px solid rgba(251,191,36,0.2); letter-spacing: 0.1em;
+    }
+    .planned-features { margin-top: 2rem; display: flex; justify-content: center; gap: 1rem; flex-wrap: wrap; }
+    .pf-item {
+        background: #0d1525; border: 1px solid #1a2744; border-radius: 8px;
+        padding: 0.8rem 1.2rem; font-size: 0.82rem; color: #8090b0; text-align: left;
+        min-width: 180px;
+    }
+    .pf-item strong { display: block; color: #c8d0e0; font-family: 'Syne', sans-serif; margin-bottom: 0.2rem; }
+
+    /* Comparison divider */
+    .vs-divider {
+        display: flex; align-items: center; justify-content: center;
+        margin: 0.5rem 0 1.5rem 0;
+    }
+    .vs-pill {
+        font-family: 'JetBrains Mono', monospace; font-size: 0.65rem;
+        padding: 0.2rem 0.8rem; border-radius: 20px;
+        background: #1a2744; color: #4a6080; letter-spacing: 0.1em;
+    }
+
+    h2, h3 { font-family: 'Syne', sans-serif !important; font-weight: 700 !important; color: #f0f4ff !important; letter-spacing: -0.02em !important; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -188,7 +338,7 @@ def inject_css():
 class HierarchicalXLMRBase(nn.Module):
     def __init__(self):
         super().__init__()
-        self.encoder = AutoModel.from_pretrained(BASE_MODEL_PATH)
+        self.encoder = AutoModel.from_pretrained(BASE_MODEL_NAME)
         hidden_size  = 768
         self.doc_transformer = nn.TransformerEncoder(
             nn.TransformerEncoderLayer(
@@ -207,18 +357,20 @@ class HierarchicalXLMRBase(nn.Module):
         input_ids      = input_ids.view(-1, seq_len)
         attention_mask = attention_mask.view(-1, seq_len)
         outputs        = self.encoder(input_ids=input_ids, attention_mask=attention_mask)
-        cls_embeddings = outputs.last_hidden_state[:, 0, :].view(batch_size, num_chunks, -1)
-        doc_outputs    = self.doc_transformer(cls_embeddings)
-        attn_weights   = torch.softmax(self.attention(doc_outputs), dim=1)
-        doc_rep        = torch.sum(attn_weights * doc_outputs, dim=1)
+        cls_emb        = outputs.last_hidden_state[:, 0, :].view(batch_size, num_chunks, -1)
+        doc_out        = self.doc_transformer(cls_emb)
+        attn_w         = torch.softmax(self.attention(doc_out), dim=1)
+        doc_rep        = torch.sum(attn_w * doc_out, dim=1)
         return self.classifier(doc_rep)
 
 
-@st.cache_resource
+@st.cache_resource(show_spinner="Loading TruthLens model from HuggingFace...")
 def load_model():
-    tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL_PATH)
-    model     = HierarchicalXLMRBase()
-    model.load_state_dict(torch.load(MODEL_PATH, map_location=DEVICE))
+    # Download fine-tuned weights from HuggingFace Hub
+    model_path = hf_hub_download(repo_id=HF_REPO_ID, filename=HF_FILENAME)
+    tokenizer  = AutoTokenizer.from_pretrained(BASE_MODEL_NAME)
+    model      = HierarchicalXLMRBase()
+    model.load_state_dict(torch.load(model_path, map_location=DEVICE))
     model.to(DEVICE)
     model.eval()
     return model, tokenizer
@@ -233,29 +385,22 @@ def predict_article(text, model, tokenizer):
         truncation=True, padding="max_length",
         return_overflowing_tokens=True, return_tensors="pt"
     )
-    input_ids      = encoding["input_ids"]
-    attention_mask = encoding["attention_mask"]
-
-    if input_ids.size(0) > MAX_CHUNKS:
-        input_ids, attention_mask = input_ids[:MAX_CHUNKS], attention_mask[:MAX_CHUNKS]
-
-    pad = MAX_CHUNKS - input_ids.size(0)
+    ids  = encoding["input_ids"]
+    mask = encoding["attention_mask"]
+    if ids.size(0) > MAX_CHUNKS:
+        ids, mask = ids[:MAX_CHUNKS], mask[:MAX_CHUNKS]
+    pad = MAX_CHUNKS - ids.size(0)
     if pad > 0:
-        input_ids      = torch.cat([input_ids,      torch.zeros((pad, MAX_LENGTH), dtype=torch.long)], dim=0)
-        attention_mask = torch.cat([attention_mask, torch.zeros((pad, MAX_LENGTH), dtype=torch.long)], dim=0)
-
+        ids  = torch.cat([ids,  torch.zeros((pad, MAX_LENGTH), dtype=torch.long)], dim=0)
+        mask = torch.cat([mask, torch.zeros((pad, MAX_LENGTH), dtype=torch.long)], dim=0)
     with torch.no_grad():
-        probs = torch.softmax(
-            model(input_ids.unsqueeze(0).to(DEVICE), attention_mask.unsqueeze(0).to(DEVICE)),
-            dim=1
-        )
+        probs = torch.softmax(model(ids.unsqueeze(0).to(DEVICE), mask.unsqueeze(0).to(DEVICE)), dim=1)
     prob_real, prob_fake = probs[0][0].item(), probs[0][1].item()
-    prediction = "Real" if prob_real > prob_fake else "Fake"
-    return prediction, max(prob_real, prob_fake), prob_real, prob_fake
+    return ("Real" if prob_real > prob_fake else "Fake"), max(prob_real, prob_fake), prob_real, prob_fake
 
 
 # ─────────────────────────────────────────────
-#  LAYER 2 — GROQ LLM HELPER
+#  GROQ LLM HELPER
 # ─────────────────────────────────────────────
 def call_llm(prompt: str) -> str:
     if not GROQ_API_KEY:
@@ -278,11 +423,14 @@ def call_llm(prompt: str) -> str:
         return ""
 
 
+# ─────────────────────────────────────────────
+#  CLAIM EXTRACTION
+# ─────────────────────────────────────────────
 def extract_claims(text: str) -> list:
-    prompt = f"""You are a fact-checking assistant. Extract 2 to 4 short, specific, verifiable factual claims from the news text below. These must be concrete facts (names, numbers, events, dates) that can be verified via a web search.
+    prompt = f"""You are a fact-checking assistant. Extract 3 to 5 short, specific, verifiable factual claims from the news text below. These must be concrete facts (names, numbers, events, dates, statistics) that can be verified via a web search.
 
 Return ONLY a valid JSON array of strings. No explanation, no markdown, no preamble.
-Example: ["India won the T20 World Cup 2024", "Rohit Sharma scored 76 runs"]
+Example: ["India won the T20 World Cup 2024", "Rohit Sharma scored 76 runs", "The match was held in Barbados"]
 
 News text:
 {text[:1500]}"""
@@ -290,17 +438,17 @@ News text:
     if not raw:
         return [text[:200]]
     try:
-        clean = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+        clean  = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
         claims = json.loads(clean)
         if isinstance(claims, list) and claims:
-            return [str(c) for c in claims[:4]]
+            return [str(c) for c in claims[:5]]
     except Exception:
         pass
     return [text[:200]]
 
 
 # ─────────────────────────────────────────────
-#  LAYER 2 — WEB SEARCH (Serper)
+#  WEB SEARCH — Serper
 # ─────────────────────────────────────────────
 def search_web(query: str) -> list:
     if not SERPER_API_KEY:
@@ -320,13 +468,17 @@ def search_web(query: str) -> list:
 
 
 # ─────────────────────────────────────────────
-#  LAYER 2 — GOOGLE FACT CHECK (optional)
+#  GOOGLE FACT CHECK DB (optional)
 # ─────────────────────────────────────────────
 def check_factcheck_db(query: str) -> list:
     if not GOOGLE_FC_KEY:
         return []
     try:
-        resp = requests.get(GFC_URL, params={"query": query[:200], "key": GOOGLE_FC_KEY, "languageCode": "en"}, timeout=10)
+        resp = requests.get(
+            GFC_URL,
+            params={"query": query[:200], "key": GOOGLE_FC_KEY, "languageCode": "en"},
+            timeout=10
+        )
         resp.raise_for_status()
         results = []
         for item in resp.json().get("claims", [])[:3]:
@@ -343,13 +495,14 @@ def check_factcheck_db(query: str) -> list:
 
 
 # ─────────────────────────────────────────────
-#  LAYER 3 — EVIDENCE SYNTHESIS (Groq)
+#  EVIDENCE SYNTHESIS — Groq
 # ─────────────────────────────────────────────
 def synthesise_verdict(original_text, style_pred, style_conf, claims, web_evidence, fc_results) -> dict:
-    evidence_block = "".join(f"[Web {i}] {ev['title']}\n{ev['snippet']}\nSource: {ev['source']}\n\n"
-                             for i, ev in enumerate(web_evidence, 1))
-    fc_block = "".join(f"Fact-check: '{fc['claim']}' rated '{fc['rating']}' by {fc['publisher']}\n"
-                       for fc in fc_results)
+    evidence_block = "".join(
+        f"[Web {i}] {ev['title']}\n{ev['snippet']}\nSource: {ev['source']}\n\n"
+        for i, ev in enumerate(web_evidence, 1)
+    )
+    fc_block   = "".join(f"Fact-check: '{fc['claim']}' rated '{fc['rating']}' by {fc['publisher']}\n" for fc in fc_results)
     claims_str = "\n".join(f"- {c}" for c in claims)
 
     prompt = f"""You are a senior fact-checker. Analyse the following and give a final verdict.
@@ -362,7 +515,7 @@ CLAIMS IDENTIFIED:
 
 STYLE-DETECTION MODEL RESULT:
 Prediction: {style_pred}, Confidence: {style_conf:.1%}
-(This model only detects writing style patterns, NOT facts)
+(This model only detects writing style patterns — NOT actual facts)
 
 WEB SEARCH EVIDENCE:
 {evidence_block if evidence_block else "No web results available."}
@@ -371,18 +524,18 @@ EXISTING FACT-CHECKS:
 {fc_block if fc_block else "No existing fact-checks found."}
 
 TASK: Decide if the news is Real or Fake.
-- Prioritise web evidence and fact-checks over the style-detection result.
-- If web evidence clearly contradicts the claims, mark as Fake even if style model says Real.
-- If evidence is missing or inconclusive, trust the style model result.
-- Give a short, clear reason (1-2 sentences max).
+- Prioritise web evidence and fact-checks over the style model.
+- If web evidence clearly contradicts the claims → Fake even if style says Real.
+- If evidence is missing or inconclusive → trust style model.
+- Give a clear reason (2-3 sentences max).
 
 Return ONLY valid JSON (no markdown, no preamble):
-{{"verdict": "Real or Fake", "confidence": 0.0 to 1.0, "reason": "one to two sentences", "evidence_used": true or false}}"""
+{{"verdict": "Real or Fake", "confidence": 0.0 to 1.0, "reason": "2-3 sentence explanation citing specific evidence", "evidence_used": true or false}}"""
 
     raw = call_llm(prompt)
     if not raw:
         return {"verdict": style_pred, "confidence": style_conf,
-                "reason": "LLM synthesis unavailable — falling back to style model result.", "evidence_used": False}
+                "reason": "LLM unavailable — falling back to style model.", "evidence_used": False}
     try:
         clean  = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
         result = json.loads(clean)
@@ -397,114 +550,266 @@ Return ONLY valid JSON (no markdown, no preamble):
 
 
 # ─────────────────────────────────────────────
+#  HELPERS — render result box
+# ─────────────────────────────────────────────
+def render_result_box(tag_label, tag_class, verdict, confidence, reason):
+    box_class   = "result-box-real" if verdict == "Real" else "result-box-fake"
+    label_class = "result-real"     if verdict == "Real" else "result-fake"
+    icon        = "✓"               if verdict == "Real" else "✗"
+    st.markdown(f"""
+<div class="result-box {box_class}">
+  <div><span class="result-tag {tag_class}">{tag_label}</span></div>
+  <div class="result-label {label_class}">{icon} {verdict}</div>
+  <div class="result-conf">Confidence: {confidence:.1%}</div>
+  <div class="result-reason">{reason}</div>
+</div>""", unsafe_allow_html=True)
+
+
+def render_claims(claims):
+    items = "".join(
+        f'<div class="claim-item"><div class="claim-num">#{i}</div><div class="claim-text">{c}</div></div>'
+        for i, c in enumerate(claims, 1)
+    )
+    st.markdown(f'<div class="claims-wrapper">{items}</div>', unsafe_allow_html=True)
+
+
+# ─────────────────────────────────────────────
 #  STREAMLIT APP
 # ─────────────────────────────────────────────
 st.set_page_config(
-    page_title="Fake News Detector",
-    page_icon="🔍",
-    layout="centered",
+    page_title="TruthLens — Fake News Detector",
+    page_icon="🔍", layout="wide",
     initial_sidebar_state="collapsed"
 )
-
 inject_css()
 
-# ── Header ───────────────────────────────────
-st.markdown('<div class="app-title">Fake News Detector</div>', unsafe_allow_html=True)
-st.markdown('<div class="app-subtitle">English & Hindi supported · Powered by XLM-RoBERTa + Llama 3.3</div>', unsafe_allow_html=True)
-
-# ── Load Model ────────────────────────────────
-try:
-    model, tokenizer = load_model()
-    model_loaded = True
-except Exception:
-    model_loaded = False
-    model = tokenizer = None
-
-# ── Input ─────────────────────────────────────
-st.markdown('<div class="section-label">News Input</div>', unsafe_allow_html=True)
-user_input = st.text_area(
-    label="news_input",
-    label_visibility="collapsed",
-    height=160,
-    placeholder="Paste your news article or headline here — English or Hindi supported..."
-)
-
-col_btn, col_toggle = st.columns([3, 1], gap="small")
-with col_btn:
-    analyze_btn = st.button("🔍  Analyze News", use_container_width=True)
-with col_toggle:
-    mode_fast = st.toggle("Style only", value=False, help="Skip web search — faster but no fact verification")
-
-
-# ─────────────────────────────────────────────
-#  ANALYSIS PIPELINE
-# ─────────────────────────────────────────────
-if analyze_btn:
-    if not user_input.strip():
-        st.warning("Please paste some news text before analyzing.")
-        st.stop()
-
-    st.markdown("---")
-
-    # ── Layer 1: Style detection ──────────────
-    if model_loaded:
-        with st.spinner("Running style analysis..."):
-            style_pred, style_conf, prob_real, prob_fake = predict_article(user_input, model, tokenizer)
-    else:
-        style_pred, style_conf = "Unknown", 0.5
-
-    # ── Layer 2: Fact verification ────────────
-    if mode_fast or not model_loaded:
-        final = {
-            "verdict":       style_pred,
-            "confidence":    style_conf,
-            "reason":        "Style only mode — web search skipped." if mode_fast else "Model not loaded.",
-            "evidence_used": False
-        }
-        claims = extract_claims(user_input) if GROQ_API_KEY else []
-
-    elif not SERPER_API_KEY or not GROQ_API_KEY:
-        missing = []
-        if not SERPER_API_KEY: missing.append("SERPER_API_KEY")
-        if not GROQ_API_KEY:   missing.append("GROQ_API_KEY")
-        st.error(f"Missing API keys in .env: {', '.join(missing)}")
-        final = {"verdict": style_pred, "confidence": style_conf,
-                 "reason": f"Missing keys: {', '.join(missing)}.", "evidence_used": False}
-        claims = []
-
-    else:
-        with st.spinner("Extracting claims..."):
-            claims = extract_claims(user_input)
-
-        all_evidence = []
-        with st.spinner(f"Searching web for {len(claims)} claim(s)..."):
-            for claim in claims:
-                all_evidence.extend(search_web(claim))
-                time.sleep(0.3)
-
-        fc_hits = []
-        if GOOGLE_FC_KEY:
-            with st.spinner("Querying fact-check database..."):
-                fc_hits = check_factcheck_db(" ".join(claims[:2]))
-
-        with st.spinner("Synthesising verdict..."):
-            final = synthesise_verdict(user_input, style_pred, style_conf, claims, all_evidence, fc_hits)
-
-    # ── Verdict card ──────────────────────────
-    is_real   = final["verdict"] == "Real"
-    card_cls  = "verdict-real" if is_real else "verdict-fake"
-    tag_icon  = "✓ Real" if is_real else "✗ Fake"
-    conf_pct  = f"{final['confidence']:.0%} confidence"
-
-    st.markdown(f"""
-<div class="{card_cls}">
-  <div class="verdict-tag">{tag_icon}</div>
-  <div class="verdict-conf">{conf_pct}</div>
+# ── Hero ──────────────────────────────────────
+st.markdown("""
+<div class="hero">
+  <div class="hero-title">Truth<span>Lens</span></div>
+  <div class="hero-subtitle">Multilingual Fake News Detection System &nbsp;·&nbsp; Minor Project &nbsp;·&nbsp; Deep Learning</div>
+  <div class="hero-badges">
+    <span class="badge badge-teal">XLM-RoBERTa</span>
+    <span class="badge badge-blue">Llama 3.3 70B</span>
+    <span class="badge badge-amber">Live Web Search</span>
+    <span class="badge badge-teal">100+ Languages</span>
+    <span class="badge badge-red">Image Detection — Coming Soon</span>
+  </div>
 </div>
 """, unsafe_allow_html=True)
 
-    # ── Claims ────────────────────────────────
-    if claims:
-        st.markdown('<div class="section-label">Claims identified</div>', unsafe_allow_html=True)
-        pills_html = "".join(f'<span class="claim-pill">{c}</span>' for c in claims)
-        st.markdown(f'<div style="margin-top:0.2rem">{pills_html}</div>', unsafe_allow_html=True)
+# ── Key status bar ────────────────────────────
+serper_ok = bool(SERPER_API_KEY)
+groq_ok   = bool(GROQ_API_KEY)
+gfc_ok    = bool(GOOGLE_FC_KEY)
+st.markdown(f"""
+<div class="key-status">
+  <span class="{'key-ok' if serper_ok else 'key-fail'}">{'●' if serper_ok else '○'} Serper {'connected' if serper_ok else 'missing'}</span>
+  <span class="{'key-ok' if groq_ok   else 'key-fail'}">{'●' if groq_ok   else '○'} Groq {'connected' if groq_ok else 'missing'}</span>
+  <span class="{'key-ok' if gfc_ok    else 'key-opt'}" >{'●' if gfc_ok    else '○'} Fact-Check DB {'connected' if gfc_ok else 'optional'}</span>
+</div>
+""", unsafe_allow_html=True)
+
+# ── Tabs ──────────────────────────────────────
+tab_text, tab_image = st.tabs(["📰  Text Detection", "🖼️  Image Detection"])
+
+# ═══════════════════════════════════════════════
+#  TAB 1 — TEXT DETECTION
+# ═══════════════════════════════════════════════
+with tab_text:
+    col_input, col_info = st.columns([3, 2], gap="large")
+
+    with col_input:
+        st.markdown('<div class="section-header">News Input</div>', unsafe_allow_html=True)
+        user_input = st.text_area(
+            label="news_input", label_visibility="collapsed", height=200,
+            placeholder="Paste your news article or headline here — English, Hindi, or any of 100+ languages supported..."
+        )
+        btn_col, tog_col = st.columns([3, 1])
+        with btn_col:
+            analyze_btn = st.button("🔍  Analyze News", use_container_width=True, type="primary")
+        with tog_col:
+            mode_fast = st.toggle("Style only", value=False,
+                                  help="Skip web search — instant result from model only")
+
+    with col_info:
+        st.markdown('<div class="section-header">Pipeline</div>', unsafe_allow_html=True)
+        st.markdown("""
+<div class="card">
+  <div class="layer-row"><div class="dot dot-amber"></div><div class="layer-name">Style Detector</div>XLM-RoBERTa — writing patterns</div>
+  <div class="layer-row"><div class="dot dot-indigo"></div><div class="layer-name">Claim Extractor</div>Llama 3.3 — pulls verifiable facts</div>
+  <div class="layer-row"><div class="dot dot-amber"></div><div class="layer-name">Web Search</div>Serper — live news for each claim</div>
+  <div class="layer-row"><div class="dot dot-indigo"></div><div class="layer-name">Fact-Check DB</div>Google — existing verdicts</div>
+  <div class="layer-row"><div class="dot dot-teal"></div><div class="layer-name">LLM Synthesiser</div>Llama 3.3 — combines all signals</div>
+</div>
+""", unsafe_allow_html=True)
+
+    # ── Load model ────────────────────────────
+    try:
+        model, tokenizer = load_model()
+        model_loaded = True
+    except Exception as e:
+        model_loaded = False
+        model = tokenizer = None
+        st.warning(f"⚠ Could not load model: {e}")
+
+    # ─────────────────────────────────────────
+    #  ANALYSIS PIPELINE
+    # ─────────────────────────────────────────
+    if analyze_btn:
+        if not user_input.strip():
+            st.warning("Please enter some news text before analyzing.")
+            st.stop()
+
+        st.markdown("---")
+
+        # ── Layer 1: Style ────────────────────
+        style_pred, style_conf, prob_real, prob_fake = "Unknown", 0.5, 0.5, 0.5
+        if model_loaded:
+            with st.spinner("Running XLM-RoBERTa style detection..."):
+                style_pred, style_conf, prob_real, prob_fake = predict_article(user_input, model, tokenizer)
+
+        # ── Layer 2: Fact verification ────────
+        claims, all_evidence, fc_hits, final = [], [], [], None
+
+        if mode_fast or not (SERPER_API_KEY and GROQ_API_KEY):
+            final = {
+                "verdict":        style_pred,
+                "confidence":     style_conf,
+                "reason":         "Style only mode — fact verification skipped." if mode_fast
+                                  else "API keys missing — showing style result only.",
+                "evidence_used":  False
+            }
+        else:
+            with st.spinner("Extracting verifiable claims with Llama 3.3..."):
+                claims = extract_claims(user_input)
+
+            all_evidence = []
+            with st.spinner(f"Searching web for {len(claims)} claim(s)..."):
+                for claim in claims:
+                    all_evidence.extend(search_web(claim))
+                    time.sleep(0.3)
+
+            if GOOGLE_FC_KEY:
+                with st.spinner("Querying Google Fact-Check database..."):
+                    fc_hits = check_factcheck_db(" ".join(claims[:2]))
+
+            with st.spinner("Synthesising final verdict with Llama 3.3..."):
+                final = synthesise_verdict(user_input, style_pred, style_conf, claims, all_evidence, fc_hits)
+
+        # ══════════════════════════════════════
+        #  DISPLAY — Style vs LLM side by side
+        # ══════════════════════════════════════
+        st.markdown('<div class="section-header">Results Comparison</div>', unsafe_allow_html=True)
+
+        res_col1, res_col2 = st.columns(2, gap="large")
+
+        with res_col1:
+            render_result_box(
+                "🧠 Style Model — XLM-RoBERTa", "tag-style",
+                style_pred, style_conf,
+                "Based on writing patterns, linguistic style, and tone of the article. Does not verify actual facts."
+            )
+            m1, m2 = st.columns(2)
+            m1.metric("Real probability", f"{prob_real:.1%}")
+            m2.metric("Fake probability", f"{prob_fake:.1%}")
+            st.progress(prob_real)
+            st.caption("⚠ Style only — writing pattern analysis, not fact verification")
+
+        with res_col2:
+            render_result_box(
+                "🌐 LLM Verdict — Llama 3.3 + Web", "tag-llm",
+                final["verdict"], final["confidence"],
+                final["reason"]
+            )
+            ev_label = "Live web + fact-check DB" if final.get("evidence_used") else "Style model fallback"
+            m3, m4 = st.columns(2)
+            m3.metric("LLM Confidence", f"{final['confidence']:.1%}")
+            m4.metric("Evidence", "Web ✓" if final.get("evidence_used") else "None")
+            st.progress(final["confidence"])
+            st.caption("✓ Fact-verified — searches web in real-time" if final.get("evidence_used") else "⚠ No web evidence used")
+
+        # ── Claims section ────────────────────
+        if claims:
+            st.markdown("---")
+            st.markdown('<div class="section-header">Verifiable Claims Extracted</div>', unsafe_allow_html=True)
+            render_claims(claims)
+
+        # ── Evidence section ──────────────────
+        if all_evidence:
+            with st.expander(f"📄  Web Evidence — {len(all_evidence)} results found"):
+                ev_html = ""
+                for ev in all_evidence:
+                    src = f'<a href="{ev["source"]}" class="ev-source" target="_blank">↗ {ev["source"][:60]}</a>' if ev["source"] else ""
+                    ev_html += f'<div class="ev-card"><div class="ev-title">{ev["title"]}</div><div class="ev-snippet">{ev["snippet"]}</div>{src}</div>'
+                st.markdown(ev_html, unsafe_allow_html=True)
+
+        if fc_hits:
+            with st.expander(f"✅  Fact-Check Database — {len(fc_hits)} matches"):
+                for fc in fc_hits:
+                    st.markdown(f"**{fc['claim']}**")
+                    st.markdown(f"`{fc['rating']}` — {fc['publisher']}")
+                    if fc["url"]:
+                        st.markdown(f"[Read full fact-check →]({fc['url']})")
+                    st.divider()
+
+        # ── Final Verdict banner ──────────────
+        st.markdown("---")
+        st.markdown('<div class="section-header">Final Verdict</div>', unsafe_allow_html=True)
+
+        fc1, fc2, fc3 = st.columns([3, 1, 1])
+        with fc1:
+            cls  = "verdict-real" if final["verdict"] == "Real" else "verdict-fake"
+            icon = "✓ Real News"  if final["verdict"] == "Real" else "✗ Fake News"
+            color = "#00c8b4"     if final["verdict"] == "Real" else "#ef4444"
+            st.markdown(f"""
+<div class="result-box result-box-{'real' if final['verdict']=='Real' else 'fake'}">
+  <div><span class="result-tag tag-final">FINAL VERDICT</span></div>
+  <div style="font-family:'Syne',sans-serif;font-size:2rem;font-weight:800;color:{color};margin-bottom:0.4rem;">{icon}</div>
+  <div class="result-reason">{final['reason']}</div>
+</div>""", unsafe_allow_html=True)
+        with fc2:
+            st.metric("Confidence", f"{final['confidence']:.1%}")
+        with fc3:
+            st.metric("Verified by", "Live Web" if final.get("evidence_used") else "Style Model")
+
+        if not final.get("evidence_used"):
+            st.warning("⚠ Verdict based on writing style only. Add SERPER + GROQ keys for full fact verification.")
+        else:
+            st.success("✓ Verdict is backed by live web evidence and LLM synthesis.")
+
+
+# ═══════════════════════════════════════════════
+#  TAB 2 — IMAGE DETECTION (COMING SOON)
+# ═══════════════════════════════════════════════
+with tab_image:
+    st.markdown("""
+<div class="coming-soon">
+  <div class="coming-soon-icon">🖼️</div>
+  <div class="coming-soon-title">Image Deepfake Detection</div>
+  <div class="coming-soon-sub">
+    Our EfficientNetB0-based deepfake face detection model is trained and ready.
+    Full integration into this interface is currently in progress.
+  </div>
+  <div class="coming-soon-badge">🚧 COMING SOON</div>
+
+  <div class="planned-features">
+    <div class="pf-item">
+      <strong>EfficientNetB0</strong>
+      Transfer learning on 5 deepfake datasets
+    </div>
+    <div class="pf-item">
+      <strong>Face Detection</strong>
+      Automated face region extraction & analysis
+    </div>
+    <div class="pf-item">
+      <strong>Confidence Score</strong>
+      Real vs Fake probability with heatmap overlay
+    </div>
+    <div class="pf-item">
+      <strong>Multi-dataset Trained</strong>
+      140K Faces · Celeb-DF v2 · CIPLAB · HardFake
+    </div>
+  </div>
+</div>
+""", unsafe_allow_html=True)
